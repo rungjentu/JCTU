@@ -45,6 +45,31 @@ button, .download {
 .download { background: var(--gold); color: #2b2108; }
 .disabled { pointer-events: none; opacity: .5; }
 
+#addPhotoBtn {
+  background: #4f8f51;
+  color: white;
+}
+
+#addVideoBtn {
+  background: #3d6fb6;
+  color: white;
+}
+
+#addSubtitleBtn {
+  background: #7453a6;
+  color: white;
+}
+
+#addNarrationBtn {
+  background: #d55268;
+  color: white;
+}
+
+#addMusicBtn {
+  background: #8c6b2d;
+  color: white;
+}
+
 .login-screen {
   display: grid;
   min-height: 100vh;
@@ -65,13 +90,15 @@ button, .download {
 }
 
 .login-card h1 {
-  font-size: 1.8rem;
+  font-size: 18pt;
   margin: 0 0 4px;
 }
 
 .login-kicker {
   color: var(--accent);
+  font-size: 18pt;
   font-weight: 900;
+  line-height: 1.05;
   margin: 0;
 }
 
@@ -83,7 +110,7 @@ button, .download {
   justify-content: space-between;
 }
 .hero p { margin: 0 0 6px; color: var(--accent); font-weight: 900; }
-.hero h1 { margin: 0; font-size: clamp(1.8rem, 3vw, 3rem); }
+.hero h1 { margin: 0; font-size: 18pt; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .vertical { display: grid; }
 
@@ -97,6 +124,22 @@ button, .download {
 }
 .notice span, .status { color: var(--muted); line-height: 1.6; }
 .notice select { min-width: 260px; }
+
+.notice button {
+  flex: 0 0 auto;
+}
+
+.notice {
+  font-size: 0.82rem;
+}
+
+#folderStatus {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .checkline {
   align-items: center;
@@ -115,14 +158,42 @@ button, .download {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
 }
+
+.grid > .panel:first-child {
+  display: flex;
+  flex-direction: column;
+}
+
 .preview { background: #101416; border-radius: 8px; overflow: hidden; }
 canvas { display: block; width: 100%; aspect-ratio: 16 / 9; }
 .transport { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 progress { width: 100%; height: 12px; margin-top: 12px; accent-color: var(--accent); }
 video { display: none; width: 100%; margin-top: 12px; border-radius: 8px; background: #101416; }
 video.ready { display: block; }
+
+.status-row {
+  align-items: flex-end;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: auto;
+}
+
+#status {
+  margin: 0;
+  max-width: 340px;
+  text-align: left;
+  width: 340px;
+}
+
+.status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
 
 h2 { margin: 0 0 12px; font-size: 1.1rem; }
 label { display: grid; gap: 6px; color: var(--muted); font-weight: 800; margin-top: 10px; }
@@ -180,7 +251,50 @@ textarea { resize: vertical; min-height: 58px; }
 .narration { background: #d55268; }
 .music { background: #8c6b2d; }
 
+.modal {
+  border: 0;
+  border-radius: 8px;
+  box-shadow: 0 22px 60px rgba(22, 32, 39, .24);
+  max-width: 560px;
+  padding: 0;
+  width: min(560px, calc(100vw - 32px));
+}
+
+.modal::backdrop {
+  background: rgba(22, 32, 39, .36);
+}
+
+.modal-card {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+}
+
+.icon-button {
+  gap: 8px;
+}
+
+.record-icon,
+.stop-icon {
+  display: inline-block;
+  height: 12px;
+  width: 12px;
+}
+
+.record-icon {
+  background: #d55268;
+  border-radius: 50%;
+}
+
+.stop-icon {
+  background: #982037;
+  border-radius: 2px;
+}
+
 @media (max-width: 900px) {
   .grid, .hero, .notice { display: grid; }
   .grid { grid-template-columns: 1fr; }
+  .status-row { align-items: stretch; display: grid; }
+  #status { width: 100%; }
+  .status-actions { justify-content: flex-start; }
 }

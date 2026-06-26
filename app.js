@@ -46,6 +46,7 @@ const els = {
   addSubtitleBtn: $("addSubtitleBtn"),
   addMusicBtn: $("addMusicBtn"),
   addNarrationBtn: $("addNarrationBtn"),
+  narrationTypeSelect: $("narrationTypeSelect"),
   playBtn: $("playBtn"),
   stopBtn: $("stopBtn"),
   renderBtn: $("renderBtn"),
@@ -62,9 +63,19 @@ const els = {
   clipText: $("clipText"),
   musicMode: $("musicMode"),
   deleteClipBtn: $("deleteClipBtn"),
+  humanRecordDialog: $("humanRecordDialog"),
+  closeHumanRecordDialogBtn: $("closeHumanRecordDialogBtn"),
   startRecordBtn: $("startRecordBtn"),
   stopRecordBtn: $("stopRecordBtn"),
+  recordStatus: $("recordStatus"),
   recordPreview: $("recordPreview"),
+  aiNarrationDialog: $("aiNarrationDialog"),
+  closeAiNarrationDialogBtn: $("closeAiNarrationDialogBtn"),
+  aiVoiceSelect: $("aiVoiceSelect"),
+  aiNarrationText: $("aiNarrationText"),
+  useSubtitleForAiBtn: $("useSubtitleForAiBtn"),
+  previewAiNarrationBtn: $("previewAiNarrationBtn"),
+  addAiNarrationBtn: $("addAiNarrationBtn"),
   mediaBin: $("mediaBin"),
 };
 const ctx = els.canvas.getContext("2d");
@@ -82,7 +93,8 @@ els.projectInput.addEventListener("change", openProjectInput);
 els.addPhotoBtn.addEventListener("click", () => els.photoInput.click());
 els.addVideoBtn.addEventListener("click", () => els.videoInput.click());
 els.addMusicBtn.addEventListener("click", () => els.musicInput.click());
-els.addNarrationBtn.addEventListener("click", () => els.narrationInput.click());
+els.addNarrationBtn.addEventListener("click", showNarrationTypeSelect);
+els.narrationTypeSelect.addEventListener("change", handleNarrationTypeChange);
 els.addSubtitleBtn.addEventListener("click", addSubtitle);
 els.photoInput.addEventListener("change", addPhotos);
 els.videoInput.addEventListener("change", addVideo);
@@ -92,8 +104,13 @@ els.playBtn.addEventListener("click", playPreview);
 els.stopBtn.addEventListener("click", stopPreview);
 els.renderBtn.addEventListener("click", renderVideo);
 els.deleteClipBtn.addEventListener("click", deleteSelected);
+els.closeHumanRecordDialogBtn.addEventListener("click", closeHumanRecordDialog);
 els.startRecordBtn.addEventListener("click", startHumanRecording);
 els.stopRecordBtn.addEventListener("click", stopHumanRecording);
+els.closeAiNarrationDialogBtn.addEventListener("click", closeAiNarrationDialog);
+els.useSubtitleForAiBtn.addEventListener("click", useCurrentSubtitleForAi);
+els.previewAiNarrationBtn.addEventListener("click", previewAiNarration);
+els.addAiNarrationBtn.addEventListener("click", addAiNarration);
 els.clipStart.addEventListener("input", updateSelected);
 els.clipDuration.addEventListener("input", updateSelected);
 els.clipText.addEventListener("input", updateSelected);
@@ -325,7 +342,13 @@ function setEditing(enabled) {
     els.addSubtitleBtn,
     els.addMusicBtn,
     els.addNarrationBtn,
+    els.narrationTypeSelect,
     els.startRecordBtn,
+    els.aiVoiceSelect,
+    els.aiNarrationText,
+    els.useSubtitleForAiBtn,
+    els.previewAiNarrationBtn,
+    els.addAiNarrationBtn,
     els.clipStart,
     els.clipDuration,
     els.clipText,
@@ -399,6 +422,38 @@ async function addNarration(event) {
   }, { once: true });
 }
 
+function showNarrationTypeSelect() {
+  els.narrationTypeSelect.hidden = false;
+  els.narrationTypeSelect.focus();
+}
+
+function handleNarrationTypeChange() {
+  if (els.narrationTypeSelect.value === "human") {
+    openHumanRecordDialog();
+  }
+  if (els.narrationTypeSelect.value === "ai") {
+    openAiNarrationDialog();
+  }
+  els.narrationTypeSelect.value = "";
+}
+
+function openHumanRecordDialog() {
+  els.recordStatus.textContent = "按「開始錄音」建立人聲旁白。";
+  if (els.humanRecordDialog.showModal) {
+    els.humanRecordDialog.showModal();
+  } else {
+    els.humanRecordDialog.hidden = false;
+  }
+}
+
+function closeHumanRecordDialog() {
+  if (els.humanRecordDialog.open) {
+    els.humanRecordDialog.close();
+  } else {
+    els.humanRecordDialog.hidden = true;
+  }
+}
+
 async function startHumanRecording() {
   if (!navigator.mediaDevices?.getUserMedia) {
     setStatus("此瀏覽器不支援麥克風錄音。");
@@ -416,9 +471,11 @@ async function startHumanRecording() {
     state.recorder.start();
     els.startRecordBtn.disabled = true;
     els.stopRecordBtn.disabled = false;
-    setStatus("錄音中。停止後會建立旁白層片段，並可試聽。");
+    els.recordStatus.textContent = "錄音中。";
+    setStatus("錄音中。停止後會建立旁白層片段。");
   } catch {
     setStatus("未取得麥克風權限，無法錄音。");
+    els.recordStatus.textContent = "未取得麥克風權限，無法錄音。";
   }
 }
 
@@ -447,7 +504,72 @@ async function finishHumanRecording(stream) {
   els.startRecordBtn.disabled = false;
   els.stopRecordBtn.disabled = true;
   state.recorder = null;
-  setStatus("已新增人聲旁白片段，可按播放器試聽；產生影片時會一併輸出。");
+  if (state.folderHandle) {
+    await saveProject();
+    els.recordStatus.textContent = "已暫存錄音檔到暫存檔案夾";
+    setStatus("已暫存錄音檔到暫存檔案夾。");
+  } else {
+    els.recordStatus.textContent = "已建立錄音片段；請先選擇暫存資料夾後再儲存。";
+    setStatus("已新增人聲旁白片段；請先選擇暫存資料夾後再儲存。");
+  }
+}
+
+function addAiNarration() {
+  let text = els.aiNarrationText.value.trim();
+  if (!text) {
+    text = window.prompt("請輸入 AI 旁白文字", "")?.trim() || "";
+    els.aiNarrationText.value = text;
+  }
+  if (!text) {
+    setStatus("尚未輸入 AI 旁白文字。");
+    return;
+  }
+  addClip({
+    layer: "narration",
+    name: "AI 旁白",
+    start: state.playhead,
+    duration: Math.max(1, Math.ceil(text.length / 5)),
+    text,
+    isAi: true,
+    voiceURI: els.aiVoiceSelect.value,
+  });
+  setStatus("已新增 AI 旁白片段。試播時會朗讀；若要輸出成音檔，請使用人聲錄音。");
+  closeAiNarrationDialog();
+}
+
+function previewAiNarration() {
+  const text = els.aiNarrationText.value.trim();
+  if (!text) {
+    setStatus("請先輸入 AI 旁白文字。");
+    return;
+  }
+  speakAiText(text, els.aiVoiceSelect.value);
+}
+
+function useCurrentSubtitleForAi() {
+  const subtitle = activeAt(state.playhead).find((clip) => clip.layer === "subtitle" && clip.text);
+  if (!subtitle) {
+    setStatus("目前播放頭位置沒有字幕可連接。");
+    return;
+  }
+  els.aiNarrationText.value = subtitle.text;
+  setStatus("已將目前字幕帶入 AI 旁白文字。");
+}
+
+function openAiNarrationDialog() {
+  if (els.aiNarrationDialog.showModal) {
+    els.aiNarrationDialog.showModal();
+  } else {
+    els.aiNarrationDialog.hidden = false;
+  }
+}
+
+function closeAiNarrationDialog() {
+  if (els.aiNarrationDialog.open) {
+    els.aiNarrationDialog.close();
+  } else {
+    els.aiNarrationDialog.hidden = true;
+  }
 }
 
 function addSubtitle() {
@@ -572,11 +694,13 @@ async function playPreview() {
   stopPreview();
   state.playing = true;
   const start = performance.now() - state.playhead * 1000;
-  await startAudioElements(state.playhead);
+  const spoken = new Set();
+  await startAudioElements(state.playhead, spoken);
   const tick = (now) => {
     if (!state.playing) return;
     state.playhead = (now - start) / 1000;
     drawAt(state.playhead);
+    startAudioElements(state.playhead, spoken);
     updateTimelineReadoutOnly();
     if (state.playhead >= totalDuration()) return stopPreview();
     requestAnimationFrame(tick);
@@ -584,9 +708,17 @@ async function playPreview() {
   requestAnimationFrame(tick);
 }
 
-async function startAudioElements(second) {
+async function startAudioElements(second, spoken = new Set()) {
   for (const clip of state.clips.filter((item) => ["music", "narration"].includes(item.layer))) {
     const active = second >= clip.start && second < clip.start + clip.duration;
+    if (clip.isAi) {
+      if (active && !spoken.has(clip.id)) {
+        spoken.add(clip.id);
+        speakAiText(clip.text, clip.voiceURI);
+      }
+      continue;
+    }
+    if (!clip.media) continue;
     clip.media.pause();
     if (!active) continue;
     clip.media.currentTime = second - clip.start;
@@ -598,6 +730,7 @@ async function startAudioElements(second) {
 
 function stopPreview() {
   state.playing = false;
+  speechSynthesis.cancel();
   for (const clip of state.clips) clip.media?.pause();
 }
 
@@ -741,9 +874,23 @@ function projectCacheFilename() {
 }
 
 async function openProject() {
-  if (state.folderHandle) {
-    await refreshProjectList();
-    return setStatus("請從暫存檔清單選擇要開啟的 JSON。");
+  if (window.showOpenFilePicker) {
+    const options = {
+      types: [{
+        description: "影片暫存檔",
+        accept: { "application/json": [".json"] },
+      }],
+      excludeAcceptAllOption: false,
+    };
+    if (state.folderHandle) options.startIn = state.folderHandle;
+    try {
+      const [handle] = await window.showOpenFilePicker(options);
+      const file = await handle.getFile();
+      await loadProject(await file.text());
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+    }
   }
   els.projectInput.click();
 }
@@ -770,6 +917,8 @@ async function serializeProject() {
       start: clip.start,
       duration: clip.duration,
       text: clip.text || "",
+      isAi: Boolean(clip.isAi),
+      voiceURI: clip.voiceURI || "",
       dataUrl: clip.dataUrl || "",
     })),
   };
@@ -883,7 +1032,35 @@ function updateTimelineReadoutOnly() {
   els.timeInfo.textContent = `${formatTime(state.playhead)} / ${formatTime(totalDuration())}`;
 }
 
+function speakAiText(text, voiceURI = "") {
+  if (!text) return;
+  speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  const voice = speechSynthesis.getVoices().find((item) => item.voiceURI === voiceURI);
+  if (voice) utterance.voice = voice;
+  utterance.lang = voice?.lang || "zh-TW";
+  utterance.rate = 1;
+  speechSynthesis.speak(utterance);
+}
+
+function loadAiVoices() {
+  const voices = speechSynthesis.getVoices();
+  if (!voices.length) return;
+  const preferred = voices.filter((voice) => /zh|en|ja/i.test(voice.lang));
+  const source = (preferred.length ? preferred : voices).slice(0, 4);
+  const labels = ["AI 男聲1", "AI男聲2", "AI女聲1", "AI女聲2"];
+  els.aiVoiceSelect.innerHTML = "";
+  source.forEach((voice, index) => {
+    const option = document.createElement("option");
+    option.value = voice.voiceURI;
+    option.textContent = `${labels[index] || "聲音"}：${voice.name} (${voice.lang})`;
+    els.aiVoiceSelect.appendChild(option);
+  });
+}
+
 drawAt(0);
 updateUi();
 setEditing(true);
 initLogin();
+loadAiVoices();
+speechSynthesis.addEventListener("voiceschanged", loadAiVoices);
