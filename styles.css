@@ -243,6 +243,15 @@ textarea { resize: vertical; min-height: 58px; }
   text-overflow: ellipsis;
   padding: 0 10px;
   font-weight: 900;
+  cursor: grab;
+}
+.clip.dragging {
+  cursor: grabbing;
+  opacity: .88;
+  z-index: 2;
+}
+.timeline-dragging {
+  user-select: none;
 }
 .clip.selected { border-color: #101416; box-shadow: 0 0 0 2px white inset; }
 .photo { background: #4f8f51; }

@@ -17,6 +17,8 @@ const state = {
   recorder: null,
   recordChunks: [],
   recordStart: 0,
+  timelineDrag: null,
+  suppressTimelineClick: false,
 };
 
 const $ = (id) => document.querySelector(`#${id}`);
@@ -115,6 +117,7 @@ els.clipStart.addEventListener("input", updateSelected);
 els.clipDuration.addEventListener("input", updateSelected);
 els.clipText.addEventListener("input", updateSelected);
 els.timeline.addEventListener("click", (event) => {
+  if (state.suppressTimelineClick) return;
   if (event.target.classList.contains("track")) {
     const rect = event.target.getBoundingClientRect();
     state.playhead = Math.max(0, (event.clientX - rect.left) / 50);
@@ -122,6 +125,8 @@ els.timeline.addEventListener("click", (event) => {
     updateUi();
   }
 });
+window.addEventListener("mousemove", moveTimelineClip);
+window.addEventListener("mouseup", endTimelineClipDrag);
 
 function setStatus(text) {
   els.status.textContent = text;
@@ -419,6 +424,7 @@ async function addNarration(event) {
   const media = createMedia("audio", dataUrl);
   media.addEventListener("loadedmetadata", () => {
     addClip({ layer: "narration", name: file.name, dataUrl, media, duration: media.duration || 4 });
+    setStatus(`已匯入旁白音檔：${file.name}`);
   }, { once: true });
 }
 
@@ -430,6 +436,9 @@ function showNarrationTypeSelect() {
 function handleNarrationTypeChange() {
   if (els.narrationTypeSelect.value === "human") {
     openHumanRecordDialog();
+  }
+  if (els.narrationTypeSelect.value === "import") {
+    els.narrationInput.click();
   }
   if (els.narrationTypeSelect.value === "ai") {
     openAiNarrationDialog();
@@ -639,8 +648,10 @@ function renderTimeline() {
       item.style.width = `${Math.max(38, clip.duration * 50)}px`;
       item.textContent = clip.text || clip.name;
       item.type = "button";
+      item.addEventListener("mousedown", (event) => startTimelineClipDrag(event, clip, track, item));
       item.addEventListener("click", (event) => {
         event.stopPropagation();
+        if (state.suppressTimelineClick) return;
         state.selectedId = clip.id;
         state.playhead = clip.start;
         updateUi();
@@ -649,6 +660,60 @@ function renderTimeline() {
     }
     row.append(label, track);
     els.timeline.appendChild(row);
+  }
+}
+
+function startTimelineClipDrag(event, clip, track, item) {
+  if (event.button !== 0) return;
+  event.stopPropagation();
+  if (!state.editing) {
+    setStatus("請先按「繼續編輯」再移動時間軸片段。");
+    return;
+  }
+  const trackRect = track.getBoundingClientRect();
+  const itemRect = item.getBoundingClientRect();
+  state.selectedId = clip.id;
+  state.timelineDrag = {
+    clip,
+    item,
+    trackRect,
+    offsetX: event.clientX - itemRect.left,
+    startX: event.clientX,
+    moved: false,
+  };
+  item.classList.add("dragging");
+  document.body.classList.add("timeline-dragging");
+}
+
+function moveTimelineClip(event) {
+  const drag = state.timelineDrag;
+  if (!drag) return;
+  const maxStart = Math.max(0, (drag.trackRect.width - drag.item.offsetWidth) / 50);
+  const rawStart = (event.clientX - drag.trackRect.left - drag.offsetX) / 50;
+  const nextStart = Math.min(maxStart, Math.max(0, round(rawStart)));
+  drag.moved = drag.moved || Math.abs(event.clientX - drag.startX) > 2;
+  drag.clip.start = nextStart;
+  state.playhead = nextStart;
+  drag.item.style.left = `${nextStart * 50}px`;
+  els.clipStart.value = nextStart;
+  els.timeInfo.textContent = `${formatTime(state.playhead)} / ${formatTime(totalDuration())}`;
+  drawAt(state.playhead);
+}
+
+function endTimelineClipDrag() {
+  const drag = state.timelineDrag;
+  if (!drag) return;
+  drag.item.classList.remove("dragging");
+  document.body.classList.remove("timeline-dragging");
+  state.timelineDrag = null;
+  if (drag.moved) {
+    state.suppressTimelineClick = true;
+    resetOutput();
+    updateUi();
+    setStatus(`已將「${drag.clip.text || drag.clip.name}」移到 ${formatTime(drag.clip.start)}。`);
+    window.setTimeout(() => {
+      state.suppressTimelineClick = false;
+    }, 0);
   }
 }
 
@@ -692,15 +757,17 @@ function drawCaption(text) {
 async function playPreview() {
   if (!state.clips.length) return setStatus("請先加入素材。");
   stopPreview();
+  await unlockPreviewAudio();
   state.playing = true;
   const start = performance.now() - state.playhead * 1000;
   const spoken = new Set();
-  await startAudioElements(state.playhead, spoken);
+  const started = new Set();
+  await startAudioElements(state.playhead, spoken, started);
   const tick = (now) => {
     if (!state.playing) return;
     state.playhead = (now - start) / 1000;
     drawAt(state.playhead);
-    startAudioElements(state.playhead, spoken);
+    startAudioElements(state.playhead, spoken, started);
     updateTimelineReadoutOnly();
     if (state.playhead >= totalDuration()) return stopPreview();
     requestAnimationFrame(tick);
@@ -708,7 +775,22 @@ async function playPreview() {
   requestAnimationFrame(tick);
 }
 
-async function startAudioElements(second, spoken = new Set()) {
+async function unlockPreviewAudio() {
+  const clips = state.clips.filter((clip) => ["music", "narration"].includes(clip.layer) && clip.media);
+  for (const clip of clips) {
+    const media = clip.media;
+    const originalMuted = media.muted;
+    const originalTime = media.currentTime || 0;
+    media.muted = true;
+    media.currentTime = 0;
+    await media.play().catch(() => {});
+    media.pause();
+    media.currentTime = originalTime;
+    media.muted = originalMuted;
+  }
+}
+
+async function startAudioElements(second, spoken = new Set(), started = new Set()) {
   for (const clip of state.clips.filter((item) => ["music", "narration"].includes(item.layer))) {
     const active = second >= clip.start && second < clip.start + clip.duration;
     if (clip.isAi) {
@@ -719,12 +801,24 @@ async function startAudioElements(second, spoken = new Set()) {
       continue;
     }
     if (!clip.media) continue;
-    clip.media.pause();
-    if (!active) continue;
-    clip.media.currentTime = second - clip.start;
+    if (!active) {
+      if (started.has(clip.id)) {
+        clip.media.pause();
+        started.delete(clip.id);
+      }
+      continue;
+    }
     clip.media.volume = clip.layer === "music" && hasNarration(second) && els.musicMode.value === "duck" ? 0.22 : 1;
-    if (clip.layer === "music" && hasNarration(second) && els.musicMode.value === "remove") continue;
-    await clip.media.play().catch(() => setStatus("Chrome 阻擋音訊播放，請再按一次試播。"));
+    if (clip.layer === "music" && hasNarration(second) && els.musicMode.value === "remove") {
+      clip.media.pause();
+      started.delete(clip.id);
+      continue;
+    }
+    if (started.has(clip.id) && !clip.media.paused) continue;
+    clip.media.currentTime = second - clip.start;
+    await clip.media.play()
+      .then(() => started.add(clip.id))
+      .catch(() => setStatus("Chrome 阻擋音訊播放，請再按一次試播；若仍無聲，請在網址列允許音訊/麥克風權限。"));
   }
 }
 
@@ -746,12 +840,11 @@ async function renderVideo() {
   const stream = els.canvas.captureStream(30);
   for (const track of audio.stream.getAudioTracks()) stream.addTrack(track);
 
-  const mimeType = chooseMimeType();
-  const recorder = new MediaRecorder(stream, { mimeType });
+  const { recorder, format } = createVideoRecorder(stream);
   const chunks = [];
   recorder.ondataavailable = (event) => event.data.size && chunks.push(event.data);
   const done = new Promise((resolve) => {
-    recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || "video/webm" }));
+    recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || format.mimeType }));
   });
 
   const duration = totalDuration();
@@ -779,10 +872,16 @@ async function renderVideo() {
   els.resultVideo.src = state.videoUrl;
   els.resultVideo.classList.add("ready");
   els.downloadLink.href = state.videoUrl;
+  els.downloadLink.download = `youtube-ready-video.${format.extension}`;
+  els.downloadLink.textContent = `下載 ${format.label} 影片`;
   els.downloadLink.classList.remove("disabled");
   els.progress.value = 100;
   els.renderBtn.disabled = false;
-  setStatus("影片已完成，輸出檔已包含旁白與背景音樂，可上傳 YouTube。");
+  if (format.extension === "mp4") {
+    setStatus("影片已完成，已輸出為通用 MP4，並包含旁白與背景音樂，可上傳 YouTube 或在手機播放。");
+  } else {
+    setStatus("影片已完成，但此瀏覽器不支援直接輸出 MP4，已改用 WebM；若需 iOS 播放，請使用支援 MP4 錄製的新版 Chrome/Edge 或再轉檔。");
+  }
 }
 
 async function buildMixedAudioStream() {
@@ -1008,12 +1107,39 @@ function resetOutput() {
   els.resultVideo.removeAttribute("src");
   els.resultVideo.classList.remove("ready");
   els.downloadLink.href = "#";
+  els.downloadLink.download = "youtube-ready-video.mp4";
+  els.downloadLink.textContent = "下載 MP4 影片";
   els.downloadLink.classList.add("disabled");
   els.progress.value = 0;
 }
 
-function chooseMimeType() {
-  return ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"].find((type) => MediaRecorder.isTypeSupported(type)) || "video/webm";
+function chooseOutputFormat() {
+  const formats = [
+    { mimeType: "video/mp4;codecs=avc1.42E01E,mp4a.40.2", extension: "mp4", label: "MP4" },
+    { mimeType: "video/mp4;codecs=h264,aac", extension: "mp4", label: "MP4" },
+    { mimeType: "video/mp4", extension: "mp4", label: "MP4" },
+    { mimeType: "video/webm;codecs=vp9,opus", extension: "webm", label: "WebM" },
+    { mimeType: "video/webm;codecs=vp8,opus", extension: "webm", label: "WebM" },
+    { mimeType: "video/webm", extension: "webm", label: "WebM" },
+  ];
+  return formats.find((format) => MediaRecorder.isTypeSupported(format.mimeType)) || formats.at(-1);
+}
+
+function createVideoRecorder(stream) {
+  const preferred = chooseOutputFormat();
+  const formats = preferred.extension === "mp4"
+    ? [preferred, { mimeType: "video/webm;codecs=vp9,opus", extension: "webm", label: "WebM" }, { mimeType: "video/webm", extension: "webm", label: "WebM" }]
+    : [preferred];
+  for (const format of formats) {
+    if (!MediaRecorder.isTypeSupported(format.mimeType)) continue;
+    try {
+      return { recorder: new MediaRecorder(stream, { mimeType: format.mimeType }), format };
+    } catch {
+      // Try the next container if this browser rejects the advertised format.
+    }
+  }
+  const fallback = { mimeType: "video/webm", extension: "webm", label: "WebM" };
+  return { recorder: new MediaRecorder(stream), format: fallback };
 }
 
 function formatTime(value) {

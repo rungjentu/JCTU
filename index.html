@@ -60,7 +60,7 @@
             <button id="playBtn" class="primary" type="button">試播</button>
             <button id="stopBtn" class="secondary" type="button">停止</button>
             <button id="renderBtn" class="primary" type="button">產生影片（含旁白與背景音樂）</button>
-            <a id="downloadLink" class="download disabled" href="#" download="youtube-ready-video.webm">下載 YouTube 影片</a>
+            <a id="downloadLink" class="download disabled" href="#" download="youtube-ready-video.mp4">下載 MP4 影片</a>
           </div>
           <progress id="progress" value="0" max="100"></progress>
           <video id="resultVideo" controls playsinline></video>
@@ -85,6 +85,7 @@
             <select id="narrationTypeSelect" hidden>
               <option value="">選擇旁白類型</option>
               <option value="human">人聲錄音</option>
+              <option value="import">匯入音檔</option>
               <option value="ai">AI旁白</option>
             </select>
           </div>
